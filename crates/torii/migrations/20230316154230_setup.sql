@@ -28,6 +28,7 @@ CREATE TABLE models (
     class_hash TEXT NOT NULL,
     packed_size INTEGER NOT NULL,
     unpacked_size INTEGER NOT NULL,
+    schem BLOB NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

@@ -46,5 +46,9 @@ pub struct Model {
     pub name: String,
     pub class_hash: String,
     pub transaction_hash: String,
+    pub layout: Vec<u8>,
+    pub schem: Vec<u8>,
+    pub packed_size: u8,
+    pub unpacked_size: u8,
     pub created_at: DateTime<Utc>,
 }

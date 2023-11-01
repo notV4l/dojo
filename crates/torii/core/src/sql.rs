@@ -10,6 +10,7 @@ use sqlx::pool::PoolConnection;
 use sqlx::{Executor, Pool, Sqlite};
 use starknet::core::types::{Event, FieldElement, InvokeTransactionV1};
 use starknet_crypto::poseidon_hash_many;
+use tracing::info;
 
 use super::World;
 use crate::simple_broker::SimpleBroker;
@@ -80,6 +81,15 @@ impl Sql {
         Ok(meta)
     }
 
+    pub async fn model(&self, name: &String) -> Result<ModelType> {
+        let mut conn: PoolConnection<Sqlite> = self.pool.acquire().await?;
+        let meta: ModelType = sqlx::query_as(&format!("SELECT * FROM models WHERE id = '{}'", name))
+            .fetch_one(&mut conn)
+            .await?;
+
+        Ok(meta)
+    }
+
     pub async fn register_model(
         &mut self,
         model: Ty,
@@ -92,15 +102,26 @@ impl Sql {
             .iter()
             .map(|x| <FieldElement as TryInto<u8>>::try_into(*x).unwrap())
             .collect::<Vec<u8>>();
+
+        info!("model {:#?}", model);
+
+        let schema_blob = model
+            .serialize()
+            .unwrap()
+            .iter()
+            .map(|x| <FieldElement as TryInto<u8>>::try_into(*x).unwrap())
+            .collect::<Vec<u8>>();
+
         let insert_models = format!(
-            "INSERT INTO models (id, name, class_hash, layout, packed_size, unpacked_size) VALUES \
-             ('{id}', '{name}', '{class_hash:#x}', '{layout}', '{packed_size}', \
+            "INSERT INTO models (id, name, class_hash, layout, packed_size, unpacked_size, schem) VALUES \
+             ('{id}', '{name}', '{class_hash:#x}',  '{layout}', '{packed_size}', '{schem}',\
              '{unpacked_size}') ON CONFLICT(id) DO UPDATE SET class_hash='{class_hash:#x}', \
-             layout='{layout}', packed_size='{packed_size}', unpacked_size='{unpacked_size}' \
+              layout='{layout}', packed_size='{packed_size}', unpacked_size='{unpacked_size}', schem='{schem}' \
              RETURNING created_at",
             id = model.name(),
             name = model.name(),
-            layout = hex::encode(&layout_blob)
+            layout = hex::encode(&layout_blob),
+            schem = hex::encode(&schema_blob)
         );
         // execute first to get created_at
         let query_result: (DateTime<Utc>,) =
@@ -114,6 +135,10 @@ impl Sql {
             name: model.name(),
             class_hash: format!("{:#x}", class_hash),
             transaction_hash: "0x0".to_string(),
+            layout: layout_blob,
+            schem: schema_blob,
+            packed_size: packed_size,
+            unpacked_size: unpacked_size,
             created_at: query_result.0,
         });
         Ok(())
