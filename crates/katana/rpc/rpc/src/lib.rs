@@ -1,5 +1,6 @@
 pub mod config;
 pub mod dev;
+mod http;
 pub mod katana;
 pub mod starknet;
 pub mod torii;
@@ -10,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use config::ServerConfig;
+use http::HttpApiServer;
 use hyper::Method;
 use jsonrpsee::server::logger::{Logger, MethodKind, TransportProtocol};
 use jsonrpsee::server::middleware::proxy_get_request::ProxyGetRequestLayer;
@@ -26,13 +28,22 @@ use katana_rpc_api::ApiKind;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::dev::DevApi;
+use crate::http::HttpApi;
 use crate::katana::KatanaApi;
 use crate::starknet::StarknetApi;
 use crate::torii::ToriiApi;
 
 pub async fn spawn(sequencer: Arc<KatanaSequencer>, config: ServerConfig) -> Result<NodeHandle> {
     let mut methods = RpcModule::new(());
-    methods.register_method("health", |_, _| Ok(serde_json::json!({ "health": true })))?;
+
+    let http_api = HttpApi::new(sequencer.clone());
+    let http_api_health = http_api.clone();
+   
+    methods.register_method("health", move |_, _| Ok(http_api_health.health()))?;
+    methods.register_method("predeployed_accounts", move |_, _| {
+        Ok(http_api.clone().predeployed_accounts())
+    })?;
+   
 
     for api in &config.apis {
         match api {
@@ -61,6 +72,7 @@ pub async fn spawn(sequencer: Arc<KatanaSequencer>, config: ServerConfig) -> Res
     let middleware = tower::ServiceBuilder::new()
         .layer(cors)
         .layer(ProxyGetRequestLayer::new("/", "health")?)
+        .layer(ProxyGetRequestLayer::new("/predeployed_accounts", "predeployed_accounts")?)
         .timeout(Duration::from_secs(20));
 
     let server = ServerBuilder::new()
